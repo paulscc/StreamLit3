@@ -156,8 +156,8 @@ if source_option == "Subir una Imagen":
                 else:
                     cv_image = image_array
                 
-                # Procesar la imagen
-                processed_frame, info_list = st.session_state.processor.process_frame_for_webrtc(cv_image)
+                # Procesar la imagen usando el método optimizado para imágenes estáticas
+                processed_frame, info_list = st.session_state.processor.process_single_image(cv_image)
                 
                 # Mostrar imagen procesada
                 st.image(processed_frame, caption="Imagen procesada", channels="BGR", use_column_width=True)
