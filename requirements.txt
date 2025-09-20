@@ -1,0 +1,25 @@
+# Requirements para la aplicación simple de OpenCV
+
+streamlit==1.35.0
+numpy==1.26.4
+pillow==10.2.0
+
+pyzbar
+streamlit-webrtc
+requests
+
+pandas
+scikit-learn
+joblib
+opencv-python-headless
+ultralytics==8.3.199
+
+
+
+
+
+
+
+
+
+
