@@ -257,11 +257,15 @@ elif source_option == "Subir un Archivo de Video":
                     if info_list:
                         for book_info in info_list:
                             # Se agrega una verificación para evitar agregar objetos None
-                            if book_info is not None and book_info.get('isbn'):
+                            if book_info is not None and isinstance(book_info, dict) and book_info.get('isbn'):
                                 isbn = book_info['isbn']
                                 # Solo agregar libros únicos
-                                if not any(book.get('isbn') == isbn for book in books_found_in_video):
+                                if not any(book and isinstance(book, dict) and book.get('isbn') == isbn for book in books_found_in_video):
                                     books_found_in_video.append(book_info)
+                            else:
+                                # Log error pero continúa procesando
+                                print(f"Elemento inválido en info_list: {book_info}")
+                                continue
                     
                     # Mostrar información acumulada sin reiniciar
                     with info_container.container():
@@ -269,8 +273,18 @@ elif source_option == "Subir un Archivo de Video":
                             st.subheader(f"📚 Libros encontrados: {len(books_found_in_video)}")
                             
                             for i, book in enumerate(books_found_in_video):
+                                # Verificar que book no sea None y sea un diccionario válido
+                                if book is None or not isinstance(book, dict):
+                                    continue
+                                
                                 # Se ha mejorado la forma de obtener el título para el expander
-                                title_for_expander = book.get('book_info', {}).get('titulo', book.get('isbn', 'Libro sin título'))
+                                try:
+                                    title_for_expander = book.get('book_info', {}).get('titulo', book.get('isbn', 'Libro sin título'))
+                                    if not title_for_expander:
+                                        title_for_expander = f"Libro {i+1}"
+                                except (AttributeError, TypeError):
+                                    title_for_expander = f"Libro {i+1}"
+                                
                                 with st.expander(f"Libro {i+1}: {title_for_expander}", expanded=True):
                                     
                                     # Dividir en columnas: información (izquierda) y recomendaciones (derecha)
@@ -278,40 +292,65 @@ elif source_option == "Subir un Archivo de Video":
                                     
                                     with col_info:
                                         st.markdown("### 📖 Información")
-                                        if book.get('book_info'):
-                                            st.write(f"**Título:** {book['book_info']['titulo']}")
-                                            st.write(f"**Autores:** {book['book_info']['autores']}")
-                                            st.write(f"**Editorial:** {book['book_info']['editorial']}")
-                                            st.write(f"**ISBN:** {book['isbn']}")
-                                        else:
-                                            st.write(f"**ISBN:** {book['isbn']}")
-                                            st.warning("Información no encontrada en OpenLibrary")
+                                        # Verificar que book_info existe y es válido
+                                        try:
+                                            if book.get('book_info') and isinstance(book.get('book_info'), dict):
+                                                book_info_dict = book['book_info']
+                                                st.write(f"**Título:** {book_info_dict.get('titulo', 'N/A')}")
+                                                st.write(f"**Autores:** {book_info_dict.get('autores', 'N/A')}")
+                                                st.write(f"**Editorial:** {book_info_dict.get('editorial', 'N/A')}")
+                                                st.write(f"**ISBN:** {book.get('isbn', 'N/A')}")
+                                            else:
+                                                st.write(f"**ISBN:** {book.get('isbn', 'N/A')}")
+                                                st.warning("Información no encontrada en OpenLibrary")
+                                        except (AttributeError, TypeError, KeyError) as e:
+                                            st.error(f"Error al procesar información del libro: {str(e)}")
+                                            st.write(f"**ISBN:** {book.get('isbn', 'N/A') if book else 'Error'}")
                                     
                                     with col_recs:
                                         st.markdown("### 🤖 Recomendaciones")
                                         
                                         # Se ha mejorado la forma de obtener el título para evitar el error 'NoneType'
-                                        book_info = book.get('book_info')
-                                        book_title = book_info.get('titulo') if book_info else None
+                                        book_title = None
+                                        try:
+                                            book_info = book.get('book_info')
+                                            if book_info and isinstance(book_info, dict):
+                                                book_title = book_info.get('titulo')
+                                        except (AttributeError, TypeError):
+                                            book_title = None
                                         
+                                        if not book or not book.get('isbn'):
+                                            st.error("Datos del libro inválidos")
+                                            continue
+                                            
                                         rec_key = f"video_rec_{book['isbn']}"
                                         
                                         if book_title and st.session_state.get('recommendation_model'):
                                             # Generar recomendaciones automáticamente si no existen
                                             if rec_key not in st.session_state:
                                                 with st.spinner("Generando..."):
-                                                    recommendations = get_content_based_recommendations(book_title)
-                                                    st.session_state[rec_key] = recommendations
+                                                    try:
+                                                        recommendations = get_content_based_recommendations(book_title)
+                                                        st.session_state[rec_key] = recommendations
+                                                    except Exception as e:
+                                                        st.error(f"Error generando recomendaciones: {str(e)}")
+                                                        st.session_state[rec_key] = "Error al generar recomendaciones"
                                             
                                             # Mostrar recomendaciones
                                             st.markdown(st.session_state[rec_key])
                                             
                                             # Botón para regenerar con clave única
-                                            if st.button("🔄 Regenerar", key=generate_unique_key("regenerate_video", book, str(i))):
-                                                with st.spinner("Regenerando..."):
-                                                    new_recs = get_content_based_recommendations(book_title)
-                                                    st.session_state[rec_key] = new_recs
-                                                    st.rerun()
+                                            try:
+                                                if st.button("🔄 Regenerar", key=generate_unique_key("regenerate_video", book, str(i))):
+                                                    with st.spinner("Regenerando..."):
+                                                        try:
+                                                            new_recs = get_content_based_recommendations(book_title)
+                                                            st.session_state[rec_key] = new_recs
+                                                            st.rerun()
+                                                        except Exception as e:
+                                                            st.error(f"Error regenerando: {str(e)}")
+                                            except Exception as e:
+                                                st.error(f"Error creando botón: {str(e)}")
                                         else:
                                             st.info("Título del libro no disponible para generar recomendaciones.")
                 
