@@ -8,6 +8,15 @@ import os
 import joblib
 import pandas as pd
 import cv2
+import hashlib
+
+# Función para generar claves únicas
+def generate_unique_key(base_key, book_data, extra_id=""):
+    """Genera una clave única para widgets de Streamlit"""
+    isbn = book_data.get('isbn', 'no_isbn')
+    timestamp = str(int(time.time() * 1000))  # milisegundos
+    data_hash = hashlib.md5(str(book_data).encode()).hexdigest()[:8]
+    return f"{base_key}_{isbn}_{data_hash}_{extra_id}_{timestamp}"
 
 # --- Cargar el modelo de recomendación ---
 model_filename = 'book_recommender_model.joblib'
@@ -181,8 +190,8 @@ if source_option == "Cámara Web en Vivo":
                         # Mostrar recomendaciones
                         st.markdown(st.session_state[rec_key])
                         
-                        # Botón para regenerar
-                        if st.button("🔄 Regenerar", key=f"regenerate_webcam_{idx}", size="small"):
+                        # Botón para regenerar con clave única
+                        if st.button("🔄 Regenerar", key=generate_unique_key("regenerate_webcam", info, str(idx)), size="small"):
                             with st.spinner("Regenerando..."):
                                 new_recs = get_content_based_recommendations(book_title)
                                 st.session_state[rec_key] = new_recs
@@ -297,7 +306,8 @@ elif source_option == "Subir un Archivo de Video":
                                             # Mostrar recomendaciones
                                             st.markdown(st.session_state[rec_key])
                                             
-                                            if st.button("🔄 Regenerar", key=f"regenerate_video_{i}"):
+                                            # Botón para regenerar con clave única
+                                            if st.button("🔄 Regenerar", key=generate_unique_key("regenerate_video", book, str(i))):
                                                 with st.spinner("Regenerando..."):
                                                     new_recs = get_content_based_recommendations(book_title)
                                                     st.session_state[rec_key] = new_recs
@@ -371,7 +381,7 @@ if st.session_state.detected_books:
                     # Botones de acción
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("🔄 Regenerar", key=f"regenerate_{isbn}"):
+                        if st.button("🔄 Regenerar", key=generate_unique_key("regenerate_consolidated", book)):
                             book_info_check = book.get('book_info')
                             book_title = book_info_check.get('titulo') if book_info_check else None
                             with st.spinner("Regenerando recomendaciones..."):
@@ -387,7 +397,7 @@ if st.session_state.detected_books:
                                     st.warning("Título del libro no disponible para regenerar recomendaciones.")
                     
                     with col2:
-                        # Botón de exportar
+                        # Botón de exportar con clave única
                         export_text = f"RECOMENDACIONES DE LIBROS\n"
                         export_text += f"{'='*40}\n\n"
                         export_text += f"Libro: {title}\n"
@@ -402,7 +412,7 @@ if st.session_state.detected_books:
                             export_text,
                             file_name=f"recomendaciones_{isbn}.txt",
                             mime="text/plain",
-                            key=f"export_{isbn}"
+                            key=generate_unique_key("export", book)
                         )
     else:
         st.info("Haz clic en 'Obtener recomendaciones' en cualquier libro detectado para ver las sugerencias aquí.")
