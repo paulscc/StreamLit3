@@ -9,6 +9,7 @@ import joblib
 import pandas as pd
 import cv2
 import hashlib
+from PIL import Image
 
 # Función para generar claves únicas
 def generate_unique_key(base_key, book_data, extra_id=""):
@@ -34,7 +35,7 @@ try:
             'df': df,
             'indices': indices
         }
-        st.sidebar.success("Modelo de recomendación cargado .")
+        st.sidebar.success("✅ Modelo de recomendación cargado correctamente.")
     else:
         st.session_state.recommendation_model = None
         st.sidebar.warning("⚠️ No se encontraron los archivos del modelo. Por favor, asegúrate de que estén en el directorio correcto.")
@@ -82,7 +83,7 @@ def get_content_based_recommendations(title):
     return response
 
 # Título de la aplicación Streamlit
-st.title("Sistema de Biblioteca")
+st.title("Escáner de Códigos de Barras de Libros")
 
 # Sidebar para debug
 st.sidebar.header("Estado del Sistema")
@@ -121,14 +122,175 @@ class VideoTransformer(VideoTransformerBase):
         return processed_frame
 
 # --- Interfaz de usuario para la selección de la fuente de video ---
-st.header("Selecciona una Fuente de Video")
+st.header("Selecciona una Fuente de Entrada")
 source_option = st.selectbox(
     "Elige una opción para escanear:",
-    ("Cámara Web en Vivo", "Subir un Archivo de Video")
+    ("Subir una Imagen", "Cámara Web en Vivo", "Subir un Archivo de Video")
 )
 
 # --- Conditional Logic ---
-if source_option == "Cámara Web en Vivo":
+if source_option == "Subir una Imagen":
+    st.info("Sube una imagen que contenga códigos de barras de libros para detectar y obtener recomendaciones.")
+    
+    uploaded_image = st.file_uploader(
+        "Elige un archivo de imagen (.jpg, .jpeg, .png, .bmp)", 
+        type=["jpg", "jpeg", "png", "bmp"]
+    )
+    
+    if uploaded_image is not None:
+        # Mostrar la imagen subida
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.subheader("Imagen Original")
+            image = Image.open(uploaded_image)
+            st.image(image, caption="Imagen subida", use_column_width=True)
+        
+        with col2:
+            st.subheader("Procesamiento")
+            with st.spinner("Procesando imagen..."):
+                # Convertir imagen a formato OpenCV
+                image_array = np.array(image)
+                if len(image_array.shape) == 3:
+                    cv_image = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+                else:
+                    cv_image = image_array
+                
+                # Procesar la imagen
+                processed_frame, info_list = st.session_state.processor.process_frame_for_webrtc(cv_image)
+                
+                # Mostrar imagen procesada
+                st.image(processed_frame, caption="Imagen procesada", channels="BGR", use_column_width=True)
+        
+        # Procesar resultados
+        books_found_in_image = []
+        if info_list:
+            for book_info in info_list:
+                if book_info is not None and isinstance(book_info, dict) and book_info.get('isbn'):
+                    isbn = book_info['isbn']
+                    # Solo agregar libros únicos
+                    if not any(book and isinstance(book, dict) and book.get('isbn') == isbn for book in books_found_in_image):
+                        books_found_in_image.append(book_info)
+                        
+                        # También agregar a la lista global
+                        if not any(b and b.get('isbn') == isbn for b in st.session_state.detected_books):
+                            st.session_state.detected_books.append(book_info)
+        
+        # Mostrar resultados
+        if books_found_in_image:
+            st.success(f"🎉 Se detectaron {len(books_found_in_image)} código(s) de barras!")
+            
+            for i, book in enumerate(books_found_in_image):
+                # Verificar que book no sea None y sea un diccionario válido
+                if book is None or not isinstance(book, dict):
+                    continue
+                
+                # Título para el expander
+                try:
+                    title_for_expander = book.get('book_info', {}).get('titulo', book.get('isbn', 'Libro sin título'))
+                    if not title_for_expander:
+                        title_for_expander = f"Libro {i+1}"
+                except (AttributeError, TypeError):
+                    title_for_expander = f"Libro {i+1}"
+                
+                with st.expander(f"📖 Libro {i+1}: {title_for_expander}", expanded=True):
+                    # Dividir en columnas: información (izquierda) y recomendaciones (derecha)
+                    col_info, col_recs = st.columns([1, 1])
+                    
+                    with col_info:
+                        st.markdown("### 📚 Información del Libro")
+                        try:
+                            if book.get('book_info') and isinstance(book.get('book_info'), dict):
+                                book_info_dict = book['book_info']
+                                st.write(f"**Título:** {book_info_dict.get('titulo', 'N/A')}")
+                                st.write(f"**Autores:** {book_info_dict.get('autores', 'N/A')}")
+                                st.write(f"**Editorial:** {book_info_dict.get('editorial', 'N/A')}")
+                                st.write(f"**ISBN:** {book.get('isbn', 'N/A')}")
+                            else:
+                                st.write(f"**ISBN:** {book.get('isbn', 'N/A')}")
+                                st.info("ℹ️ Información no encontrada en OpenLibrary")
+                        except (AttributeError, TypeError, KeyError) as e:
+                            st.error(f"Error al procesar información del libro: {str(e)}")
+                            st.write(f"**ISBN:** {book.get('isbn', 'N/A') if book else 'Error'}")
+                    
+                    with col_recs:
+                        st.markdown("### 🤖 Recomendaciones")
+                        
+                        # Obtener título del libro para recomendaciones
+                        book_title = None
+                        try:
+                            book_info_check = book.get('book_info')
+                            if book_info_check and isinstance(book_info_check, dict):
+                                book_title = book_info_check.get('titulo')
+                        except (AttributeError, TypeError):
+                            book_title = None
+                        
+                        if not book or not book.get('isbn'):
+                            st.error("❌ Datos del libro inválidos")
+                            continue
+                            
+                        rec_key = f"image_rec_{book['isbn']}"
+                        
+                        if book_title and st.session_state.get('recommendation_model'):
+                            # Generar recomendaciones automáticamente si no existen
+                            if rec_key not in st.session_state:
+                                with st.spinner("🔍 Generando recomendaciones..."):
+                                    try:
+                                        recommendations = get_content_based_recommendations(book_title)
+                                        st.session_state[rec_key] = recommendations
+                                    except Exception as e:
+                                        st.error(f"❌ Error generando recomendaciones: {str(e)}")
+                                        st.session_state[rec_key] = "Error al generar recomendaciones"
+                            
+                            # Mostrar recomendaciones
+                            st.markdown(st.session_state[rec_key])
+                            
+                            # Botón para regenerar con clave única
+                            try:
+                                if st.button("🔄 Regenerar Recomendaciones", key=generate_unique_key("regenerate_image", book, str(i))):
+                                    with st.spinner("🔄 Regenerando..."):
+                                        try:
+                                            new_recs = get_content_based_recommendations(book_title)
+                                            st.session_state[rec_key] = new_recs
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"❌ Error regenerando: {str(e)}")
+                            except Exception as e:
+                                st.error(f"❌ Error creando botón: {str(e)}")
+                        else:
+                            st.info("ℹ️ Título del libro no disponible para generar recomendaciones.")
+                            
+                            # Opción manual si no hay título
+                            if not book_title:
+                                st.markdown("**Búsqueda manual:**")
+                                manual_title = st.text_input(
+                                    "Ingresa el título manualmente:", 
+                                    key=f"manual_title_{book['isbn']}",
+                                    placeholder="Ej: El nombre del viento"
+                                )
+                                
+                                if manual_title and st.button("🔍 Buscar", key=f"manual_search_{book['isbn']}"):
+                                    with st.spinner("Buscando recomendaciones..."):
+                                        try:
+                                            manual_recs = get_content_based_recommendations(manual_title)
+                                            st.session_state[rec_key] = manual_recs
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"❌ No se encontraron recomendaciones para '{manual_title}'")
+        else:
+            st.warning("⚠️ No se detectaron códigos de barras en la imagen.")
+            st.info("""
+            **💡 Consejos para mejor detección:**
+            - Asegúrate de que el código de barras esté bien enfocado
+            - Usa buena iluminación sin reflejos
+            - El código debe ser claramente visible
+            - Prueba con diferentes ángulos si no funciona
+            """)
+    
+    else:
+        st.info("👆 Por favor, sube una imagen para comenzar el análisis.")
+
+elif source_option == "Cámara Web en Vivo":
     st.info("Iniciando la cámara web. Permite el acceso en el navegador para comenzar a escanear.")
     
     # Inicia la transmisión de la cámara web
@@ -503,4 +665,3 @@ st.markdown("""
 - Mantén el código paralelo a la cámara
 - Evita reflejos y sombras sobre el código
 """)
-
