@@ -34,7 +34,7 @@ try:
             'df': df,
             'indices': indices
         }
-        st.sidebar.success("✅ Modelo de recomendación cargado correctamente.")
+        st.sidebar.success("Modelo de recomendación cargado .")
     else:
         st.session_state.recommendation_model = None
         st.sidebar.warning("⚠️ No se encontraron los archivos del modelo. Por favor, asegúrate de que estén en el directorio correcto.")
@@ -82,7 +82,7 @@ def get_content_based_recommendations(title):
     return response
 
 # Título de la aplicación Streamlit
-st.title("Escáner de Códigos de Barras de Libros")
+st.title("Sistema de Biblioteca")
 
 # Sidebar para debug
 st.sidebar.header("Estado del Sistema")
@@ -503,3 +503,4 @@ st.markdown("""
 - Mantén el código paralelo a la cámara
 - Evita reflejos y sombras sobre el código
 """)
+
