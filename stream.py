@@ -83,7 +83,7 @@ def get_content_based_recommendations(title):
     return response
 
 # Título de la aplicación Streamlit
-st.title("Escáner de Códigos de Barras de Libros")
+st.title("Escáner de Libros")
 
 # Sidebar para debug
 st.sidebar.header("Estado del Sistema")
@@ -665,3 +665,4 @@ st.markdown("""
 - Mantén el código paralelo a la cámara
 - Evita reflejos y sombras sobre el código
 """)
+
